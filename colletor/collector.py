@@ -2,6 +2,9 @@ from colletor.contract.ERC20Contract import ERC20Contract
 from colletor.contract.SwapContract import SwapContract
 from os import environ
 from web3 import Web3
+import sqlite3
+
+DATABASE = "trades.db"
 
 # Infura API Key
 INFURA_PROJECT_ID = environ['INFURA_PROJECT_ID']
@@ -25,6 +28,37 @@ ERC20_CONTRACTS = [
 ]
 START_FROM_BLOCK_INDEX = 13952534  # 10830904  # TODO : Change it to 0 to start from block 0
 
+
+def create_table():
+    conn = sqlite3.connect(DATABASE)
+    conn.execute('''CREATE TABLE IF NOT EXISTS TRADE
+             (ID TEXT PRIMARY KEY     NOT NULL,
+             TOKEN          TEXT      NOT NULL,
+             AMOUNT_OUT_MIN INT,
+             AMOUNT_IN      INT,
+             AMOUNT_OUT     INT,
+             WALLET         TEXT      NOT NULL,
+             BLOCK          INT       NOT NULL,
+             SIDE           TEXT      NOT NULL);''')
+    print("Table created successfully")
+
+    conn.close()
+
+
+def insert_trade(transaction, contract, data, side):
+    conn = sqlite3.connect(DATABASE)
+    print("Insert", ":", (transaction['hash'].hex(), contract, data.get('amountOutMin'), data.get('amountIn'), data.get('to'),
+                  transaction['blockNumber'], side))
+    conn.execute("INSERT OR IGNORE INTO TRADE (ID, TOKEN, AMOUNT_OUT_MIN, AMOUNT_IN, AMOUNT_OUT, WALLET, BLOCK, SIDE) VALUES (?,?,?,?,?,?,?,?)",
+                 (transaction['hash'].hex(), contract, data.get('amountOutMin'), data.get('amountIn'), data.get('amountOut'), data.get('to'),
+                  transaction['blockNumber'], side))
+    conn.commit()
+    conn.close()
+
+
+# Create table
+create_table()
+
 # Create Infura mainnet client API
 web3 = Web3(Web3.HTTPProvider("https://mainnet.infura.io/v3/" + str(INFURA_PROJECT_ID)))
 
@@ -40,12 +74,13 @@ for current_block_index in range(START_FROM_BLOCK_INDEX, web3.eth.get_block_numb
                 if 'path' in func_params:  # Swap checking
                     for erc20_contract in ERC20_CONTRACTS:
                         addresses = func_params.get('path')
-                        # TODO : Store the event as BuySwap or SellSwap
+
                         if addresses[0] == erc20_contract.contract:
                             status = web3.eth.get_transaction_receipt(transaction['hash'])['status']
                             if status == 1:
-                                print("SELL: ", transaction, "=>", status)
+                                insert_trade(transaction, erc20_contract.contract, func_params, "SELL")
                         elif addresses[1] == erc20_contract.contract:
                             status = web3.eth.get_transaction_receipt(transaction['hash'])['status']
                             if status == 1:
-                                print("BUY: ", transaction, "=>", status)
+                                insert_trade(transaction, erc20_contract.contract, func_params, "BUY")
+
