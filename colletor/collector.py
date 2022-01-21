@@ -24,9 +24,19 @@ SWAP_CONTRACTS = [
 
 # List of ERC20 tokens to track
 ERC20_CONTRACTS = [
-    ERC20Contract("YFI - yearn.finance", "0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e")
+    ERC20Contract("YFI - yearn.finance", "0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e"),
+    ERC20Contract("UNI - Uniswap", "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984"),
+    ERC20Contract("AXS - Axie Infinity", "0xbb0e17ef65f82ab018d8edd776e8dd940327b28b"),
+    ERC20Contract("SAND -  The Sandbox", "0x3845badade8e6dff049820680d1f14bd3903a5d0"),
+    ERC20Contract("MANA - Decentraland", "0x0f5d2fb29fb7d3cfee444a200298f468908cc942"),
+    ERC20Contract("Aave", "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9"),
+    ERC20Contract("SHIB - Shiba Inu", "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce"),
+    ERC20Contract("ENJ - Enjin Coin", "0xf629cbd94d3791c9250152bd8dfbdf380e2a3b9c"),
+    ERC20Contract("LRC - Loopring", "0xbbbbca6a901c926f240b89eacb641d8aec7aeafd"),
+    ERC20Contract("CRV - Curve DAO Token", "0xd533a949740bb3306d119cc777fa900ba034cd52"),
+    ERC20Contract("SNX - Synthetix Network Token", "0xc011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f")
 ]
-START_FROM_BLOCK_INDEX = 13952534  # 10830904  # TODO : Change it to 0 to start from block 0
+START_FROM_BLOCK_INDEX = 0  # 0  # TODO : Change it to 0 to start from block 0
 
 
 def create_table():
@@ -34,11 +44,11 @@ def create_table():
     conn.execute('''CREATE TABLE IF NOT EXISTS TRADE
              (ID TEXT PRIMARY KEY     NOT NULL,
              TOKEN          TEXT      NOT NULL,
-             AMOUNT_OUT_MIN INT,
-             AMOUNT_IN      INT,
-             AMOUNT_OUT     INT,
+             AMOUNT_OUT_MIN REAL,
+             AMOUNT_IN      REAL,
+             AMOUNT_OUT     REAL,
              WALLET         TEXT      NOT NULL,
-             BLOCK          INT       NOT NULL,
+             BLOCK          REAL       NOT NULL,
              SIDE           TEXT      NOT NULL);''')
     print("Table created successfully")
 
@@ -47,13 +57,22 @@ def create_table():
 
 def insert_trade(transaction, contract, data, side):
     conn = sqlite3.connect(DATABASE)
-    print("Insert", ":", (transaction['hash'].hex(), contract, data.get('amountOutMin'), data.get('amountIn'), data.get('to'),
-                  transaction['blockNumber'], side))
-    conn.execute("INSERT OR IGNORE INTO TRADE (ID, TOKEN, AMOUNT_OUT_MIN, AMOUNT_IN, AMOUNT_OUT, WALLET, BLOCK, SIDE) VALUES (?,?,?,?,?,?,?,?)",
-                 (transaction['hash'].hex(), contract, data.get('amountOutMin'), data.get('amountIn'), data.get('amountOut'), data.get('to'),
-                  transaction['blockNumber'], side))
+    print("Insert", ":", (
+    transaction['hash'].hex(), contract, to_decimal(data.get('amountOutMin')), to_decimal(data.get('amountIn')), data.get('to'),
+    transaction['blockNumber'], side))
+    conn.execute(
+        "INSERT OR IGNORE INTO TRADE (ID, TOKEN, AMOUNT_OUT_MIN, AMOUNT_IN, AMOUNT_OUT, WALLET, BLOCK, SIDE) VALUES (?,?,?,?,?,?,?,?)",
+        (transaction['hash'].hex(), contract, to_decimal(data.get('amountOutMin')), to_decimal(data.get('amountIn')),
+         to_decimal(data.get('amountOut')), data.get('to'),
+         transaction['blockNumber'], side))
     conn.commit()
     conn.close()
+
+
+def to_decimal(amount):
+    if amount is not None:
+        return amount / 18.0
+    return amount
 
 
 # Create table
@@ -62,11 +81,13 @@ create_table()
 # Create Infura mainnet client API
 web3 = Web3(Web3.HTTPProvider("https://mainnet.infura.io/v3/" + str(INFURA_PROJECT_ID)))
 
-for current_block_index in range(START_FROM_BLOCK_INDEX, web3.eth.get_block_number()):
+for current_block_index in range(11380515, START_FROM_BLOCK_INDEX, -1):
     current_block = web3.eth.get_block(current_block_index, full_transactions=True)
+    print("Current block", current_block_index)
 
     # Iterate all block transactions
     for transaction in current_block['transactions']:
+
         for swap_contract in SWAP_CONTRACTS:
             if swap_contract.contract_match(transaction):
                 contract = web3.eth.contract(address=transaction["to"], abi=swap_contract.abi)
@@ -83,4 +104,3 @@ for current_block_index in range(START_FROM_BLOCK_INDEX, web3.eth.get_block_numb
                             status = web3.eth.get_transaction_receipt(transaction['hash'])['status']
                             if status == 1:
                                 insert_trade(transaction, erc20_contract.contract, func_params, "BUY")
-
